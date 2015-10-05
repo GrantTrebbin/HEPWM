@@ -12,9 +12,16 @@ class HEPWMsystem():
     # Harmonic Elimination PWM Quarter wave symmetric pulsed waveform
     #
     # It's important to note that not all input paramters will be solvable
-    def __init__(self, harmonics, magnitudes):
+    def __init__(self, harmonics, magnitudes, levels):
         self.harmonicCount = len(harmonics)
         magnitudeCount = len(magnitudes)
+
+        if (levels == 2):
+            twoLevels = 1;
+        elif (levels ==3):
+            twoLevels = 0;
+        else:
+            raise ValueError("Levels must be 2 or 3")
 
         # Do some basic input validation
         if self.harmonicCount != magnitudeCount:
@@ -38,7 +45,9 @@ class HEPWMsystem():
         # the location of the switching locations (transitions)
         harmonicMagnitude = \
             sympy.Sum(4 * (-1)**(p) * sympy.cos(h[k]*alpha[p]),
-                     (p, 0, self.harmonicCount-1)) / h[k] / math.pi
+                     (p, 0, self.harmonicCount-1)) / h[k] / math.pi - (
+                      twoLevels * 2 / math.pi / h[k])
+        print (harmonicMagnitude)
 
         # Subtract the desired magnitude from each harmonic, square the result,
         # and add them all together.  This will be at a minimum (i.e. 0) when
@@ -70,7 +79,7 @@ class HEPWMsystem():
         for condition in range(1, self.harmonicCount):
             self.constraintList = self.constraintList + (
                 {'type': 'ineq',
-                 'fun': lambda c: c[condition] - c[condition-1]},)
+                 'fun': lambda c, d=condition: c[d] - c[d-1]},)
         self.constraintList = self.constraintList + (
             {'type': 'ineq',
              'fun': lambda c: math.pi/2 - c[self.harmonicCount-1]},)
@@ -94,18 +103,22 @@ class HEPWMsystem():
         return opt.minimize(self.function, self.initialEstimate(),
                             method='SLSQP', constraints=self.constraints())
 
+###############################################################################
+# The following is example code
+# for 50Hz waveform
+###############################################################################
+
 # Initialize a HEPWMsystem object with a list
 # of harmonics to control and their magnitides
-system = HEPWMsystem([1, 3, 5, 7, 9], [0.6, 0, 0, 0, 0])
+# specify if the waveform is to have 3 or 2 levels
+levels = 2
+harmonics = [1, 3, 5, 7, 9]
+magnitudes = [0.3, 0, 0, 0, 0]
+system = HEPWMsystem(harmonics, magnitudes, levels)
 
 #Solve the system
 solution = system.solve()
 print (solution)
-
-###############################################################################
-# The following is example code using the
-# above values applied to a 50Hz waveform
-###############################################################################
 
 frequency = 50
 harmonicsToPlot = 20
@@ -128,6 +141,11 @@ for i in range(transitions):
             (x >= fullWaveTransitions[2])*(x < fullWaveTransitions[3]),
             (x >= fullWaveTransitions[3])], [0, -1, 0, 1, 0])
 
+# If 2 levels is enabled, add 1 to the x values below 1 to bring the
+# wave to value to between 0 and 1 instead of -1 and 0
+if (levels == 2):
+    wave = wave + numpy.piecewise(x, [(x < 0), (x >= 0)], [1, 0])
+
 # Perform FFT on waveform and scale it
 fftOfWave = numpy.abs(numpy.fft.fft(wave)) / points
 fftFrequencyAxis = numpy.fft.fftfreq(points, d=1/points/frequency)
@@ -139,6 +157,7 @@ plt.subplots_adjust(hspace=0.5)
 # Plot waveform
 ax1.plot(x / 2 / math.pi / frequency, wave)
 ax1.set_xlim(-0.5 / frequency, 0.5 / frequency)
+ax1.set_ylim(-1.1, 1.1)
 ax1.set_title("Waveform Magnitude")
 ax1.set_xlabel("time (s)")
 
